@@ -102,6 +102,9 @@ class BaseBulk():
         else:
             LOGGER.info(f"Used {quota_max-quota_remaining} of {quota_max} daily {self.quota_string} job quota")
 
+    def job_exists(self, job_id):
+        pass
+
 
 class Bulk(BaseBulk):
 
@@ -426,13 +429,25 @@ class BulkV2(BaseBulk):
         start_date = self.sf.get_start_date(state, catalog_entry)
         job_id = self._create_job(catalog_entry, start_date)
         
-        job_status = self._poll_on_job_status(job_id)
+        # Add the bulk Job ID and its batches to the state so it can be resumed if necessary
+        tap_stream_id = catalog_entry['tap_stream_id']
+        state = singer.write_bookmark(state, tap_stream_id, 'JobID', job_id)
+        singer.write_state(state)
+        
+        job_status = self.poll_on_job_status(job_id)
 
         if job_status['state'] in ['Failed', 'Aborted']:
+            # Job not successful - clear bookmark before raising exception
+            state = singer.clear_bookmark(state, tap_stream_id, 'JobID')
+            singer.write_state(state)
             raise TapSalesforceException(f"{job_status['state']}: {job_status.get('errorMessage', 'Unknown reason')}")
         else:
             for result in self.get_job_results(job_id, catalog_entry):
                 yield result
+
+        # Clear the Job ID bookmark now we've fetched all results
+        state = singer.clear_bookmark(state, tap_stream_id, 'JobID')
+        singer.write_state(state)
 
     def _create_job(self, catalog_entry, start_date):
         url = self.bulk_url.format(self.sf.instance_url, "")
@@ -453,15 +468,6 @@ class BulkV2(BaseBulk):
 
         return job['id']
 
-    def _poll_on_job_status(self, job_id):
-        job_status = self._get_job(job_id=job_id)
-
-        while job_status['state'] not in ['JobComplete', 'Failed', 'Aborted']:
-            time.sleep(BATCH_STATUS_POLLING_SLEEP)
-            job_status = self._get_job(job_id=job_id)
-
-        return job_status
-
     def _get_job(self, job_id):
         url = self.bulk_url.format(self.sf.instance_url, job_id)
         headers = self._get_bulk_headers()
@@ -470,6 +476,28 @@ class BulkV2(BaseBulk):
             resp = self.sf._make_request('GET', url, headers=headers)
 
         return resp.json()
+    
+    def job_exists(self, job_id):
+        try:
+            self._get_job(job_id)
+            return True # requests will raise for a 400 InvalidJob
+
+        except RequestException as ex:
+            if ex.response.headers["Content-Type"].startswith('application/json'):
+                error_code = ex.response.json()[0].get('errorCode')
+                if error_code == 'NOT_FOUND':
+                    return False
+               
+            raise
+
+    def poll_on_job_status(self, job_id):
+        job_status = self._get_job(job_id=job_id)
+
+        while job_status['state'] not in ['JobComplete', 'Failed', 'Aborted']:
+            time.sleep(BATCH_STATUS_POLLING_SLEEP)
+            job_status = self._get_job(job_id=job_id)
+
+        return job_status
 
     def get_job_results(self, job_id, catalog_entry):
         """Given a job_id, queries the results and reads
