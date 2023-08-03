@@ -513,23 +513,26 @@ class BulkV2(BaseBulk):
             args = {"locator": locator} if locator else {}
             headers['Content-Type'] = 'text/csv'
 
-            with tempfile.NamedTemporaryFile(mode="w+", encoding="utf8") as csv_file:
+            # Write file in binary mode to avoid breaking character encoding
+            with tempfile.NamedTemporaryFile(mode="wb+") as csv_file:
                 resp = self.sf._make_request('GET', url, headers=headers, stream=True, params=args)
-                for chunk in resp.iter_content(chunk_size=ITER_CHUNK_SIZE, decode_unicode=True):
+                for chunk in resp.iter_content(chunk_size=ITER_CHUNK_SIZE):
                     if chunk:
                         # Replace any NULL bytes in the chunk so it can be safely given to the CSV reader
-                        csv_file.write(chunk.replace('\0', ''))
+                        csv_file.write(chunk)
+                csv_file.close()
 
-                csv_file.seek(0)
-                csv_reader = csv.reader(csv_file,
-                                        delimiter=',',
-                                        quotechar='"')
+                # Re-open file in text mode
+                with open(csv_file.name) as read_csv_file:
+                    csv_reader = csv.reader(read_csv_file,
+                                            delimiter=',',
+                                            quotechar='"')
 
-                column_name_list = next(csv_reader)
+                    column_name_list = next(csv_reader)
 
-                for line in csv_reader:
-                    rec = dict(zip(column_name_list, line))
-                    yield rec
+                    for line in csv_reader:
+                        rec = dict(zip(column_name_list, line))
+                        yield rec
 
             locator = resp.headers.get('Sforce-Locator')
             if locator == 'null':
