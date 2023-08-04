@@ -514,7 +514,6 @@ class BulkV2(BaseBulk):
             args = {"locator": locator} if locator else {}
             headers['Content-Type'] = 'text/csv'
 
-            # with tempfile.NamedTemporaryFile(mode="wb+", dir="temp_csvs", delete=False) as csv_file:
             # Write file in binary mode to avoid breaking character encoding
             with tempfile.NamedTemporaryFile(mode="wb+", delete=False) as csv_file:
                 resp = self.sf._make_request('GET', url, headers=headers, stream=True, params=args)
