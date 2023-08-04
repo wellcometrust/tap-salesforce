@@ -519,7 +519,6 @@ class BulkV2(BaseBulk):
                 resp = self.sf._make_request('GET', url, headers=headers, stream=True, params=args)
                 for chunk in resp.iter_content(chunk_size=ITER_CHUNK_SIZE):
                     if chunk:
-                        # Replace any NULL bytes in the chunk so it can be safely given to the CSV reader
                         csv_file.write(chunk)
 
             # Re-open file in text mode
