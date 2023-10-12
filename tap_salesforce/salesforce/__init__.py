@@ -335,11 +335,10 @@ class Salesforce():
     def login(self):
         if self.is_sandbox:
             login_url = 'https://test.salesforce.com/services/oauth2/token'
+            sf_audience = 'https://test.salesforce.com'
         else:
             login_url = 'https://login.salesforce.com/services/oauth2/token'
-
-        #login_body = {'grant_type': 'refresh_token', 'client_id': self.sf_client_id,
-                     #'client_secret': self.sf_client_secret, 'refresh_token': self.refresh_token}
+            sf_audience = 'https://login.salesforce.com'
 
         private_key = None
         with open(self.sf_private_key, "r") as f:
@@ -354,11 +353,10 @@ class Salesforce():
         }
 
         # Set Salesforce JWT Payload
-        sf_aud = "https://test.salesforce.com"
         jwt_payload = {
             "iss": f"{self.sf_consumer_key}",
             "sub": f"{self.sf_user}",
-            "aud": f"{sf_aud}",
+            "aud": f"{sf_audience}",
             "exp":  f"{expiry}"
         }
 
